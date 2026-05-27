@@ -1,0 +1,17 @@
+.env
+
+data/*
+!data/.gitkeep
+
+certs/*
+!certs/.gitkeep
+
+custom-templates/*
+!custom-templates/.gitkeep
+
+backups/*
+!backups/.gitkeep
+
+grafana-data/
+*.log
+*.tmp

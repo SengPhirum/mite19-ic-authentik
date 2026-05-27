@@ -1,0 +1,147 @@
+services:
+  postgresql:
+    image: docker.io/library/postgres:16-alpine
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      POSTGRES_DB: ${PG_DB:-authentik}
+      POSTGRES_PASSWORD: ${PG_PASS:?database password required}
+      POSTGRES_USER: ${PG_USER:-authentik}
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}
+      start_period: 20s
+      interval: 30s
+      retries: 5
+      timeout: 5s
+    volumes:
+      - database:/var/lib/postgresql/data
+      - ./backups:/backups
+
+  server:
+    image: ${AUTHENTIK_IMAGE:-ghcr.io/goauthentik/server}:${AUTHENTIK_TAG:-2026.5.0}
+    restart: unless-stopped
+    command: server
+    depends_on:
+      postgresql:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      AUTHENTIK_POSTGRESQL__HOST: postgresql
+      AUTHENTIK_POSTGRESQL__NAME: ${PG_DB:-authentik}
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${PG_PASS}
+      AUTHENTIK_POSTGRESQL__USER: ${PG_USER:-authentik}
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:?secret key required}
+      AUTHENTIK_ERROR_REPORTING__ENABLED: ${AUTHENTIK_ERROR_REPORTING__ENABLED:-false}
+    ports:
+      - ${COMPOSE_PORT_HTTP:-9000}:9000
+      - ${COMPOSE_PORT_HTTPS:-9443}:9443
+    shm_size: 512mb
+    volumes:
+      - ./data:/data
+      - ./custom-templates:/templates
+      - ./blueprints/assignment-lab.yaml:/blueprints/assignment-lab.yaml:ro
+
+  worker:
+    image: ${AUTHENTIK_IMAGE:-ghcr.io/goauthentik/server}:${AUTHENTIK_TAG:-2026.5.0}
+    restart: unless-stopped
+    command: worker
+    depends_on:
+      postgresql:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      AUTHENTIK_POSTGRESQL__HOST: postgresql
+      AUTHENTIK_POSTGRESQL__NAME: ${PG_DB:-authentik}
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${PG_PASS}
+      AUTHENTIK_POSTGRESQL__USER: ${PG_USER:-authentik}
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:?secret key required}
+      AUTHENTIK_ERROR_REPORTING__ENABLED: ${AUTHENTIK_ERROR_REPORTING__ENABLED:-false}
+    shm_size: 512mb
+    user: root
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./data:/data
+      - ./certs:/certs
+      - ./custom-templates:/templates
+      - ./blueprints/assignment-lab.yaml:/blueprints/assignment-lab.yaml:ro
+
+  grafana:
+    image: docker.io/grafana/grafana-oss:12.0.2
+    restart: unless-stopped
+    depends_on:
+      - server
+    env_file:
+      - .env
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?grafana admin password required}
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://localhost:3000}
+      GF_AUTH_GENERIC_OAUTH_ENABLED: "true"
+      GF_AUTH_GENERIC_OAUTH_NAME: authentik
+      GF_AUTH_GENERIC_OAUTH_ALLOW_SIGN_UP: "true"
+      GF_AUTH_GENERIC_OAUTH_CLIENT_ID: ${OIDC_CLIENT_ID:-grafana-demo}
+      GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:?OIDC client secret required}
+      GF_AUTH_GENERIC_OAUTH_SCOPES: openid profile email
+      GF_AUTH_GENERIC_OAUTH_AUTH_URL: ${AUTHENTIK_PUBLIC_URL:-http://localhost:9000}/application/o/authorize/
+      GF_AUTH_GENERIC_OAUTH_TOKEN_URL: http://server:9000/application/o/token/
+      GF_AUTH_GENERIC_OAUTH_API_URL: http://server:9000/application/o/userinfo/
+      GF_AUTH_GENERIC_OAUTH_USE_PKCE: "true"
+      GF_AUTH_GENERIC_OAUTH_EMAIL_ATTRIBUTE_PATH: email
+      GF_AUTH_GENERIC_OAUTH_LOGIN_ATTRIBUTE_PATH: preferred_username
+      GF_AUTH_GENERIC_OAUTH_NAME_ATTRIBUTE_PATH: name
+      GF_USERS_AUTO_ASSIGN_ORG_ROLE: Viewer
+      GF_AUTH_SIGNOUT_REDIRECT_URL: ${AUTHENTIK_PUBLIC_URL:-http://localhost:9000}/application/o/grafana/end-session/
+    ports:
+      - ${GRAFANA_PORT:-3000}:3000
+    volumes:
+      - grafana-data:/var/lib/grafana
+
+  backup:
+    image: docker.io/library/postgres:16-alpine
+    restart: unless-stopped
+    profiles:
+      - backup
+    depends_on:
+      postgresql:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      PGPASSWORD: ${PG_PASS}
+      PGHOST: postgresql
+      PGUSER: ${PG_USER:-authentik}
+      PGDATABASE: ${PG_DB:-authentik}
+      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-86400}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-7}
+    volumes:
+      - ./backups:/backups
+      - ./data:/source/data:ro
+      - ./certs:/source/certs:ro
+      - ./custom-templates:/source/custom-templates:ro
+      - ./blueprints:/source/blueprints:ro
+    command:
+      - sh
+      - -c
+      - |
+        set -eu
+        echo "Scheduled backups enabled; interval=$${BACKUP_INTERVAL_SECONDS}s retention=$${BACKUP_RETENTION_DAYS}d"
+        while true; do
+          ts=$$(date -u +%Y%m%dT%H%M%SZ)
+          mkdir -p "/backups/$$ts"
+          pg_dump -h "$${PGHOST}" -U "$${PGUSER}" -d "$${PGDATABASE}" -Fc -f "/backups/$$ts/authentik.dump"
+          tar -czf "/backups/$$ts/static.tar.gz" -C /source data certs custom-templates blueprints
+          find /backups -mindepth 1 -maxdepth 1 -type d -mtime +"$${BACKUP_RETENTION_DAYS}" -exec rm -rf {} +
+          echo "Backup completed: /backups/$$ts"
+          sleep "$${BACKUP_INTERVAL_SECONDS}"
+        done
+
+volumes:
+  database:
+    driver: local
+  grafana-data:
+    driver: local
