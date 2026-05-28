@@ -128,6 +128,27 @@ Use `docs/ASSIGNMENT_REPORT.md` as the final lab report draft. Add screenshots t
 pandoc docs/ASSIGNMENT_REPORT.md -o GroupName_authentik_Assignment.pdf --toc --number-sections
 ```
 
+For an editable Word report with automated screenshots and SSO video recording, run:
+
+```powershell
+.\scripts\run-report-automation.ps1 -GroupName "GroupName"
+```
+
+The automation starts the Docker Compose stack, refreshes the demo accounts from `.env`, uses a temporary `report-admin` account for admin screenshots, captures the required screenshots in `docs/screenshots/`, records the Grafana SSO and denial flow in `docs/videos/`, and writes:
+
+```text
+reports/GroupName_authentik_Assignment.docx
+```
+
+Useful options:
+
+```powershell
+.\scripts\run-report-automation.ps1 -GroupName "GroupName" -SkipDockerStart
+.\scripts\run-report-automation.ps1 -GroupName "GroupName" -NoVideo
+.\scripts\run-report-automation.ps1 -GroupName "GroupName" -SkipBackupRestore
+.\scripts\run-report-automation.ps1 -GroupName "GroupName" -Headful
+```
+
 ## Useful Commands
 
 ```bash

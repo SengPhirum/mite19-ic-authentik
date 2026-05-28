@@ -2,6 +2,14 @@
 
 Store assignment evidence screenshots or screen-recording exports in this folder.
 
+Automated capture:
+
+```powershell
+.\scripts\run-report-automation.ps1 -GroupName "GroupName"
+```
+
+The generated Word report is written to `reports/`, and the SSO screen recording is written to `docs/videos/`.
+
 Recommended filenames:
 
 1. `01-docker-compose-ps.png` - all containers running.

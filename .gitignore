@@ -15,3 +15,7 @@ backups/*
 grafana-data/
 *.log
 *.tmp
+.venv-report/
+docs/videos/
+docs/screenshots/debug-*.png
+__pycache__/
