@@ -159,3 +159,7 @@ docker compose down
 ```
 
 Do not mount over authentik's whole `/blueprints` directory. The compose file mounts only `assignment-lab.yaml` so authentik's built-in default blueprints still create the standard flows and OIDC mappings. Also do not mount `/etc/timezone` or `/etc/localtime` into authentik containers; the official docs warn this can break OAuth and SAML time handling.
+
+## Cloud Demo
+Authentik : http://152.42.181.109:9000
+Grafana : http://152.42.181.109:3000
