@@ -16,6 +16,6 @@ grafana-data/
 *.log
 *.tmp
 .venv-report/
-docs/videos/
+docs/videos/debug-*.webm
 docs/screenshots/debug-*.png
 __pycache__/
